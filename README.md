@@ -185,6 +185,24 @@ statuses do not pass the diagnostic.
 
 ## What counts as passing
 
+### Automatic ESP32 UART loopback check
+
+If typed characters cannot be distinguished from local terminal echo, test
+the UART independently. With both boards unpowered, disconnect the modem
+completely and join ESP32 GPIO17 directly to GPIO16 using one jumper. Power
+only the ESP32 through USB and run:
+
+```text
+pio run -e uart_loopback_test -t upload
+pio device monitor --baud 115200
+```
+
+This program sends its own changing message through UART2 and compares received
+bytes. No typing is required. A PASS establishes a matching round trip through
+GPIO17 and GPIO16; FAIL reports how many bytes arrived. After the test, disconnect
+power, remove the loopback jumper, reconnect the modem wiring, and upload
+`modem_bridge` again. This check does not establish modem communication.
+
 - `AT` replies `OK`: UART/modem communication.
 - `+CPIN: READY`: SIM available.
 - `+CEREG` status 1 or 5: LTE registration.

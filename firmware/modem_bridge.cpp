@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <driver/gpio.h>
 #include "config.h"
 
 HardwareSerial modem(2);
@@ -6,6 +7,8 @@ HardwareSerial modem(2);
 void setup() {
   Serial.begin(115200);
   modem.begin(MODEM_BAUD, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
+  // UART idles high. Keep an unplugged RX input from floating and receiving noise.
+  gpio_set_pull_mode(static_cast<gpio_num_t>(MODEM_RX_PIN), GPIO_PULLUP_ONLY);
   delay(1500);
   Serial.println("WQM ESP32 -> SIM7600G-H serial bridge");
   Serial.println("Use CR+LF line endings. Send AT; expect OK.");
@@ -15,5 +18,5 @@ void setup() {
 void loop() {
   while (Serial.available()) modem.write(Serial.read());
   while (modem.available()) Serial.write(modem.read());
-  delay(1);
+  delay(1);pio device monitor --port COM8 --baud 115200 --eol CRLF
 }
