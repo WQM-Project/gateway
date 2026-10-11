@@ -18,5 +18,5 @@ void setup() {
 void loop() {
   while (Serial.available()) modem.write(Serial.read());
   while (modem.available()) Serial.write(modem.read());
-  delay(1);pio device monitor --port COM8 --baud 115200 --eol CRLF
+  delay(1);
 }

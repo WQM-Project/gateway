@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <driver/gpio.h>
 #include <stdio.h>
 #include "config.h"
 #include "ModemAT.h"
@@ -85,6 +86,7 @@ void runConnectivityTest() {
 void setup() {
   Serial.begin(115200);
   modem.begin(MODEM_BAUD, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
+  gpio_set_pull_mode(static_cast<gpio_num_t>(MODEM_RX_PIN), GPIO_PULLUP_ONLY);
   delay(3000);
   runConnectivityTest();
   Serial.println("Test finished. Send r to rerun after correcting setup.");

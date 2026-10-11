@@ -1,0 +1,3 @@
+#pragma once
+// Copy to upload.local.h (ignored by Git), then insert only the gateway key.
+constexpr const char *GATEWAY_UPLOAD_KEY = "REPLACE_WITH_GATEWAY_INGEST_KEY";

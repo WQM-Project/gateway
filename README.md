@@ -219,15 +219,15 @@ upload using the backend contract, then test with the real radios and server.
 
 ## Verification status
 
-| Deliverable                              | Current state          |
-| ---------------------------------------- | ---------------------- |
-| Manual modem bridge                      | Compiled, flashed; AT returned OK |
-| Automatic ESP32 UART loopback             | Passed; 18 matching bytes received |
+| Deliverable                              | Current state                           |
+| ---------------------------------------- | --------------------------------------- |
+| Manual modem bridge                      | Compiled, flashed; AT returned OK       |
+| Automatic ESP32 UART loopback            | Passed; 18 matching bytes received      |
 | SIM/LTE/HTTP diagnostic                  | Compiled, flashed; cellular HTTP passed |
-| Physical wiring and modem operation      | Verified on supplied hardware |
-| LoRa packet receiver                     | Pending implementation |
-| Secure backend upload                    | Pending implementation |
-| Continuous operation, queues and retries | Pending implementation |
+| Physical wiring and modem operation      | Verified on supplied hardware           |
+| LoRa packet receiver                     | Pending implementation                  |
+| Secure backend upload                    | Pending implementation                  |
+| Continuous operation, queues and retries | Pending implementation                  |
 
 ### Hardware results — 9 October 2026
 
@@ -269,11 +269,11 @@ Record separate results for compilation, UART communication, SIM registration,
 HTTP connectivity, later HTTPS upload/database verification, and the complete
 boat-to-server journey. Laptop backend tests do not verify the modem path.
 
-## Planned HTTPS upload through Supabase
+## HTTPS upload through Supabase
 
-The proposed public gateway upload path is:
+The public gateway upload path is:
 
-```text
+```Python
 ESP32 -> UART -> SIM7600G-H -> Airtel mobile internet
       -> HTTPS ingestion Edge Function -> WQM Postgres telemetry_packets
 ```
@@ -284,14 +284,23 @@ WQM project URL:
 https://scvcufiagvbeixhnwjze.supabase.co
 ```
 
-Proposed upload endpoint after deploying an Edge Function named `ingest`:
+Deployed upload endpoint (Edge Function named `ingest`):
 
 ```text
 https://scvcufiagvbeixhnwjze.supabase.co/functions/v1/ingest
 ```
 
-**The Edge Function and modem HTTPS upload are pending. This endpoint is not
-yet deployed or verified.** The existing Next.js `POST /api/ingest` lives in
+**The Edge Function was deployed and verified from the laptop on 9 October 2026.**
+Authenticated saves, exact database values, duplicate retries, changed-payload
+conflicts, bad keys and malformed packets were tested; the laptop sample was removed.
+**Physical modem HTTPS upload was verified on 11 October 2026:** the ESP32
+completed certificate/hostname validation over Airtel data and received HTTP 201.
+The exact UUID `ca949536-e954-4e74-840d-d774446d3908` was independently read from
+WQM Postgres: exactly one `WQM-001` row, all 14 synthetic fields matched, stored
+at `2026-10-11T07:53:23.890Z`. That sample remains for inspection. The second
+modem request completed with HTTP 200 and a matching duplicate acknowledgement;
+the save-plus-duplicate test passed. This does not verify boat/radio reception.
+The existing Next.js `POST /api/ingest` lives in
 the dashboard backend; it is not automatically available at the Supabase URL.
 The modem cannot access a laptop's `localhost` address over the mobile network.
 
@@ -308,20 +317,20 @@ physical modem connectivity test.
   and unchanged data through retries; do not use boot-relative uptime as the ID.
 - Preserve `ts` as node uptime in milliseconds and conductivity in microSiemens/cm.
 - Verify the HTTPS server certificate using the appropriate trusted CA and
-  correct modem time. Do not disable certificate verification to force a pass.
+  correct ESP32 time. Do not disable certificate verification to force a pass.
 - Remove a reading from the pending queue only after a valid acknowledgement.
 
-Expected application responses after the public endpoint is implemented:
+Expected application responses:
 
-| HTTP status | Meaning |
-| --- | --- |
-| 201 | New reading saved |
-| 200 | Identical reading already saved |
-| 401 / 403 | Wrong gateway credential or unauthorised node |
-| 409 | Same packet identity reused with different data |
-| 400 / 415 / 422 | Invalid request, format or telemetry |
-| 413 | Request too large |
-| 503 / network timeout | Retry unchanged data and ID with backoff |
+| HTTP status           | Meaning                                         |
+| --------------------- | ----------------------------------------------- |
+| 201                   | New reading saved                               |
+| 200                   | Identical reading already saved                 |
+| 401 / 403             | Wrong gateway credential or unauthorised node   |
+| 409                   | Same packet identity reused with different data |
+| 400 / 415 / 422       | Invalid request, format or telemetry            |
+| 413                   | Request too large                               |
+| 503 / network timeout | Retry unchanged data and ID with backoff        |
 
 ### Credential separation
 
@@ -333,12 +342,123 @@ source or serial logs. Do not place authentication keys in query-string URLs.
 
 ### Remaining upload checkpoints
 
-1. Implement and deploy the authenticated `ingest` Edge Function in WQM.
-2. Verify its public URL and request/response contract from the laptop.
-3. Configure modem TLS trust, time and the HTTPS test program.
-4. Upload one known reading through the SIM and verify the exact database row.
-5. Retry that same packet and confirm only one row exists.
-6. Record results, then integrate LoRa reception and continuous queue/retry logic.
+1. Run `backend_upload_test` on the physical ESP32/modem.
+2. Verify its printed packet ID and exact synthetic values in the database.
+3. Confirm the duplicate acknowledgement corresponds to only one row.
+4. Record results, then integrate LoRa reception and continuous queue/retry logic.
+
+### Run the cellular backend upload test
+
+Wiring and power stay the same as the connectivity test. The MAIN antenna must
+have a secure, repaired connection. Close the serial monitor before uploading.
+
+The new environment alone uses TinyGSM 0.12.0 (cellular TCP), Govorox SSLClient
+(pinned source commit, mbedTLS on ESP32), ArduinoHttpClient 0.6.1 and ArduinoJson
+6.21.5. Other diagnostic environments retain their original dependencies.
+The TLS connection checks the server CA, hostname and certificate dates before
+sending the gateway credential; it never uses `setInsecure()`.
+TLS transport reads use polling to accept partial cellular records, with a
+separate 90-second handshake limit and 30-second HTTP response timeout. A positive
+SSLClient read timeout also overrides its handshake timeout, so do not replace
+the polling setting with a long blocking read timeout.
+
+Prepare local credentials from the sibling WQM backend environment:
+
+```powershell
+node --env-file=../wqm-web-dashboard/.env.local scripts/prepare-upload.mjs
+```
+
+This creates ignored `firmware/upload.local.h` containing only the dedicated
+gateway key, and public `firmware/upload_ca.h` with GTS Root R4 from Node's
+trusted CA bundle. The WQM endpoint's verified certificate chain was inspected
+on 11 October 2026. If its CA changes, review and update the trust anchor.
+Alternatively copy `firmware/upload.local.h.example` to `firmware/upload.local.h`
+and fill in the gateway key. No Supabase service-role key belongs on the ESP32.
+
+```powershell
+pio run -e backend_upload_test -t upload --upload-port COM8
+pio device monitor --port COM8 --baud 115200
+```
+
+Run these commands separately. No typing is needed once the monitor opens.
+The program initializes the modem, connects cellular data, reads its network
+clock and sets ESP32 UTC time (including timezone conversion), then sends a
+fixed synthetic 14-field `WQM-001` reading. An invalid clock stops the test.
+The sample is **not a live sensor reading**; its `ts=12000` is example node uptime.
+
+Expected first run:
+
+```text
+[PASS] Verified TLS connection; sending sample packet
+[PASS] HTTP 201: new sample saved
+[PASS] HTTP 200: same sample already saved
+[PASS] Save + duplicate acknowledgement complete. Verify this ID in telemetry_packets
+```
+
+The UUID and full sample are stored together in ESP32 NVS before transmission.
+A timeout or reboot retains them for retries; recovery may therefore report
+HTTP 200 on the first attempt. A valid acknowledgement must match the packet ID,
+`saved=true`, and the duplicate flag/status. Response size and wait are bounded.
+During TLS diagnosis, one initial attempt runs, then a successful save is followed
+by one duplicate check. Encrypted transport byte counts are printed only during
+the TLS handshake. A separate key-free HTTP-over-TCP probe checks the TinyGSM
+send/receive path before TLS. A failed handshake does not send the gateway key.
+The plain probe uses socket 0 and HTTPS uses socket 1. The modem resolves the
+WQM hostname explicitly with `AT+CDNSGIP`, then uses that IPv4 for TCP; TLS still
+uses the original WQM hostname for SNI and certificate verification. DNS and
+TCP-open results are printed to distinguish connection failures from TLS failures.
+Keep `TINY_GSM_RX_BUFFER=1024`: SIM7600 `AT+CIPRXGET=2` accepts at most 1500 bytes
+per read, and TinyGSM requests up to its FIFO capacity. A 2048-byte FIFO can make
+large TLS replies unreadable even while `available()` reports buffered bytes.
+A compile-time guard prevents configuring this FIFO above the modem limit.
+Send `r` to rerun: an unfinished test reuses the stored packet; a completed test
+creates a **new synthetic row**. Modem-upload rows remain for inspection; remove
+only identified test UUIDs after recording results. Do not erase NVS to retry.
+
+If the serial log stops at a failure, send that log without sharing local keys.
+HTTP 401 suggests mismatched gateway keys; 403 suggests the node allowlist; 503
+suggests function configuration/storage. TLS failure requires clock/CA/data
+diagnosis. This is a hardware integration test, not continuous gateway firmware.
+
+### Change the sample and send a new packet
+
+The sample JSON is a C++ string named `SAMPLE` in
+`firmware/backend_upload_test.cpp`, not a separate `.json` file. Search for
+`SAMPLE =` in VS Code. The `\"` sequences represent quotation marks inside the
+C++ string; the transmitted JSON contains ordinary quotes.
+
+1. Change measurement values in `SAMPLE`, for example `pH` from `7.12` to `7.50`,
+   `temp_w1` from `23.5` to `25.0`, and `ts` from `12000` to `15000`. Keep all 14
+   field names and numeric types. Keep `id` as `WQM-001` unless you also configure
+   the backend's allowed node IDs. `ts` represents node uptime in milliseconds.
+2. Save the file with **Ctrl+S**.
+3. Close the serial monitor with **Ctrl+C**. In the terminal at the gateway repo
+   root, build and upload:
+
+   ```powershell
+   pio run -e backend_upload_test -t upload --upload-port COM8
+   ```
+
+4. After the upload reports **SUCCESS**, open the monitor separately:
+
+   ```powershell
+   pio device monitor --port COM8 --baud 115200
+   ```
+
+The program runs automatically. After a previously completed test, it generates
+a new UUID and sends the updated sample. Expect **HTTP 201** for the new save,
+then **HTTP 200** for the duplicate check. Use the printed packet ID to find the
+row in Supabase's `telemetry_packets` table and check the changed values.
+
+If an earlier test was unfinished, its ID and JSON remain in ESP32 NVS. The
+program retries that stored sample first, even after you change `SAMPLE` and
+reflash. After that test completes, send lowercase `r` to create a new packet
+using the updated values. Do not erase pending storage just to change readings.
+
+Sending lowercase `r` after any successful test creates another new packet with
+the same compiled sample values. The serial monitor does not currently accept
+custom JSON input. Real sensor/LoRa packets will replace this sample source when
+the boat and radio integration are ready.
 
 ## Troubleshooting
 
@@ -347,10 +467,10 @@ source or serial logs. Do not place authentication keys in query-string URLs.
 | ESP32 COM port missing    | Data cable, USB port and board USB-serial driver                      |
 | Upload fails / port busy  | Correct COM port; close serial monitors                               |
 | No`OK` from `AT`      | Modem power, PWRKEY, common GND, crossed TX/RX, UART routing and baud |
-| Garbled text              | Baud settings, common ground, RX pull-up, wiring and modem power |
+| Garbled text              | Baud settings, common ground, RX pull-up, wiring and modem power      |
 | SIM not ready             | Card insertion, active SIM and PIN status                             |
 | Registration timeout      | MAIN antenna, coverage, SIM service and network compatibility         |
-| APN configuration failure | Confirm the APN matches the inserted SIM operator |
+| APN configuration failure | Confirm the APN matches the inserted SIM operator                     |
 | Registered but HTTP fails | Data plan, APN/profile requirements and probe endpoint                |
 | HTTP 3xx                  | Redirect; choose an HTTP probe returning a body directly              |
 | Repeated modem resets     | Supply capacity, USB cable and connections                            |
