@@ -49,6 +49,12 @@ class Uploader {
     secure.setHandshakeTimeout(90);
   }
 
+  // Forget the data session after a modem reset; ensureOnline() rebuilds it.
+  void reset() {
+    secure.stop();
+    transport.ip = "";
+  }
+
   // Brings up registration, data, clock and DNS as needed. Blocks while working.
   bool ensureOnline() {
     if (!modem.isNetworkConnected()) {

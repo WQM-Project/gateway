@@ -8,14 +8,14 @@
 #include <ArduinoHttpClient.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
-#include "config.h"
-#include "upload_ca.h"
-#include "ModemAT.h"
+#include "../config.h"
+#include "../upload_ca.h"
+#include "../ModemAT.h"
 // TinyGSM fetches up to its FIFO capacity per AT+CIPRXGET=2 call.
 // SIM7600 permits at most 1500 raw bytes; oversized reads stall TLS reception.
 static_assert(TINY_GSM_RX_BUFFER <= 1500, "SIM7600 raw receive requests must fit its 1500-byte limit");
-#if __has_include("upload.local.h")
-#include "upload.local.h"
+#if __has_include("../upload.local.h")
+#include "../upload.local.h"
 #else
 #error "Prepare firmware/upload.local.h with the dedicated gateway key first"
 #endif

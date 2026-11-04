@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <Preferences.h>
+#include <sys/stat.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
@@ -15,12 +16,12 @@ class PacketQueue {
   bool begin() {
     lock = xSemaphoreCreateMutex();
     if (!lock || !LittleFS.begin(true)) return false;  // formats on first boot
-    if (!LittleFS.exists("/q") && !LittleFS.mkdir("/q")) return false;
+    if (!present("/q") && !LittleFS.mkdir("/q")) return false;
     if (!counters.begin("wqm-queue", false)) return false;
     head = counters.getUInt("head", 0);
     tail = counters.getUInt("tail", 0);
     // Power loss between rename and counter save leaves a complete file at tail.
-    while (LittleFS.exists(path(tail))) ++tail;
+    while (present(path(tail))) ++tail;
     if (head > tail) head = tail;
     save();
     Serial.printf("[Queue] %lu packet(s) waiting from before reboot\n", static_cast<unsigned long>(size()));
@@ -67,6 +68,12 @@ class PacketQueue {
 
  private:
   static String path(uint32_t sequence) { return "/q/" + String(sequence); }
+  // LittleFS.exists() logs an error for every missing file; a missing file is
+  // the normal answer here, so ask the VFS directly and quietly.
+  static bool present(const String &file) {
+    struct stat info;
+    return stat(("/littlefs" + file).c_str(), &info) == 0;
+  }
   void save() { counters.putUInt("head", head); counters.putUInt("tail", tail); }
   SemaphoreHandle_t lock = nullptr;
   Preferences counters;

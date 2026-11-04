@@ -44,6 +44,9 @@ inline bool buildPacket(const char *line, const GpsSnapshot &gps, String &out, c
     packet["gps_age_s"] = gps.ageSeconds;
   }
   packet["gps_fix"] = gps.fix;
+  // Arrival time in Unix seconds, only once network or GPS has set the clock.
+  // Unlike the server's recorded_at, it survives hours of queueing offline.
+  if (GpsTracker::clockValid()) packet["utc_s"] = static_cast<uint32_t>(time(nullptr));
   out = "";
   serializeJson(packet, out);
   return true;

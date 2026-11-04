@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <driver/gpio.h>
 #include <stdio.h>
-#include "config.h"
-#include "ModemAT.h"
+#include "../config.h"
+#include "../ModemAT.h"
 
 HardwareSerial modem(2);
 

@@ -6,17 +6,31 @@ ESP8266 + SIM7600E; these diagnostics target the supplied ESP32 + SIM7600G-H.
 
 ## Files and scope
 
-- `firmware/modem_bridge.cpp`: manually send modem commands through the ESP32.
-- `firmware/connectivity_test.cpp`: check AT communication, SIM readiness,
-  LTE registration, APN/data attachment and a real public HTTP response.
-- `firmware/uart_loopback_test.cpp`: automatically verify the ESP32 UART with
-  GPIO17 connected directly to GPIO16 and the modem disconnected.
-- `firmware/config.h`: proposed UART pins, modem baud, operator APN and probe URL.
-- `platformio.ini`: separate build/upload targets for both programs.
+```text
+firmware/
+  gateway.cpp          boat firmware: STM32 -> GPS -> flash queue -> LTE upload
+  config.h             UART pins, baud rates, SIM APN
+  gps.h                SIM7600 GNSS position, settle time, clock from satellites
+  stm_link.h           STM32 packet validation and ACK/NAK
+  packet_queue.h       packets stored in flash until uploaded
+  uploader.h           mobile data, TLS and HTTPS POST to Supabase
+  ModemAT.h            small AT command helper
+  upload_ca.h          public TLS trust anchor
+  upload.local.h       gateway key (ignored by Git; see .example)
+  tests/               standalone diagnostic programs, one per PlatformIO env
+    modem_bridge.cpp         type modem AT commands through the ESP32
+    connectivity_test.cpp    AT, SIM, LTE registration, APN and a public HTTP probe
+    uart_loopback_test.cpp   ESP32 UART check with GPIO17 wired to GPIO16
+    gps_test.cpp             GNSS antenna and fix check
+    backend_upload_test.cpp  one synthetic HTTPS upload to Supabase
+docs/STM32_INTEGRATION.md   STM32 -> ESP32 packet contract for the STM32 firmware
+scripts/fake_stm.py         bench stand-in for the STM32
+scripts/prepare-upload.mjs  writes upload.local.h and upload_ca.h
+platformio.ini              build/upload targets (gateway, gateway_bench, tests)
+```
 
-These are diagnostic programs, not the complete LoRa receiver/upload firmware.
-The HTTP probe sends no readings or authentication keys. HTTPS/TLS and backend
-POST tests still need integration. The backend work belongs to
+Each `.cpp` above is a separate program built by its own `-e <env>`; the `.h`
+files are shared pieces included by them. The backend work belongs to
 [wqm-web-dashboard](https://github.com/WQM-Project/wqm-web-dashboard).
 
 ## Before wiring
@@ -423,7 +437,7 @@ diagnosis. This is a hardware integration test, not continuous gateway firmware.
 ### Change the sample and send a new packet
 
 The sample JSON is a C++ string named `SAMPLE` in
-`firmware/backend_upload_test.cpp`, not a separate `.json` file. Search for
+`firmware/tests/backend_upload_test.cpp`, not a separate `.json` file. Search for
 `SAMPLE =` in VS Code. The `\"` sequences represent quotation marks inside the
 C++ string; the transmitted JSON contains ordinary quotes.
 
@@ -465,7 +479,7 @@ the boat and radio integration are ready.
 `firmware/gateway.cpp` (`pio run -e gateway -t upload -t monitor`) is the
 production gateway. It reads sensor packets from the STM32, adds the SIM7600
 GNSS position, stores each packet in flash and uploads it over LTE/HTTPS.
-`firmware/gps_test.cpp` (`-e gps_test`) checks the GNSS antenna on its own.
+`firmware/tests/gps_test.cpp` (`-e gps_test`) checks the GNSS antenna on its own.
 
 ### Wiring
 
@@ -481,6 +495,9 @@ GPS antenna goes on the HAT's **GNSS** socket (active antenna, 2.7-5.0 V).
 All UART lines are 3.3 V logic.
 
 ### STM32 -> ESP32 contract (for the STM32 firmware)
+
+Full guide with wiring, replies, example STM32 code and testing:
+[docs/STM32_INTEGRATION.md](docs/STM32_INTEGRATION.md).
 
 - UART 115200 baud, 8N1. One JSON object per line, ending in `
 `, max 512 bytes.
@@ -503,16 +520,33 @@ Example line:
 
 The ESP32 adds `gps_fix` (true/false) and, once it has a fix, `lat`, `lon`
 (6 decimals) and `gps_age_s` (seconds since that position was measured).
+A new fix is used only after 45 s of uninterrupted fixes, because first fixes
+drift by hundreds of metres. Once the ESP32 clock is set (mobile network or
+GPS satellite time), it adds `utc_s`: arrival time in Unix seconds, which
+stays correct for packets that were queued offline.
 Packets wait in flash (up to 2500, oldest dropped when full) and are retried
 with the same packet ID until the server acknowledges them.
 
+### Self-recovery
+
+- 8 failed uploads in a row (about 15 min): modem reset with `AT+CRESET`.
+- Modem silent for 10 min, or no successful upload for 1 h: ESP32 restarts.
+- `loop()` frozen for 10 min: the hardware watchdog restarts the ESP32.
+
+Queued packets survive every restart. A `[Status]` line every minute shows
+uptime, queue length, GPS state, consecutive failures and clock state.
+
 ### Bench test without the STM32
 
-The gateway also accepts packets over the USB cable. Close the serial monitor, then:
+`gateway` (the boat build) listens only to the STM32. `gateway_bench` also
+accepts packets over USB. Flash it, close the serial monitor, then:
 
 ```bash
-~/.platformio/penv/Scripts/python.exe scripts/fake_stm.py COM5 5 10
+pio run -e gateway_bench -t upload
+~/.platformio/penv/Scripts/python.exe scripts/fake_stm.py COM8 5 20
 ```
+
+Flash `gateway` again before installing the ESP32 on the boat.
 
 ## Troubleshooting
 

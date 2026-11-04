@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <driver/gpio.h>
 #include <TinyGsmClient.h>
-#include "config.h"
-#include "gps.h"
+#include "../config.h"
+#include "../gps.h"
 
 // GNSS diagnostic: no cellular data, no backend, no credentials.
 // Prints the modem's latest GNSS reply and the decoded position every 5 seconds.

@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <driver/gpio.h>
-#include "config.h"
+#include "../config.h"
 
 HardwareSerial testUart(2);
 unsigned long sequence = 0;
