@@ -460,6 +460,60 @@ the same compiled sample values. The serial monitor does not currently accept
 custom JSON input. Real sensor/LoRa packets will replace this sample source when
 the boat and radio integration are ready.
 
+## Gateway firmware (STM32 -> ESP32 -> GPS -> Supabase)
+
+`firmware/gateway.cpp` (`pio run -e gateway -t upload -t monitor`) is the
+production gateway. It reads sensor packets from the STM32, adds the SIM7600
+GNSS position, stores each packet in flash and uploads it over LTE/HTTPS.
+`firmware/gps_test.cpp` (`-e gps_test`) checks the GNSS antenna on its own.
+
+### Wiring
+
+| ESP32 | Connects to |
+| --- | --- |
+| GPIO16 (RX) | SIM7600 HAT TXD |
+| GPIO17 (TX) | SIM7600 HAT RXD |
+| GPIO25 (RX) | STM32 UART TX |
+| GPIO26 (TX) | STM32 UART RX |
+| GND | HAT GND **and** STM32 GND |
+
+GPS antenna goes on the HAT's **GNSS** socket (active antenna, 2.7-5.0 V).
+All UART lines are 3.3 V logic.
+
+### STM32 -> ESP32 contract (for the STM32 firmware)
+
+- UART 115200 baud, 8N1. One JSON object per line, ending in `
+`, max 512 bytes.
+- Exactly these 14 keys, numbers as JSON numbers (not strings):
+  `id` (string, `A-Z a-z 0-9 _ -`, e.g. `"WQM-001"`), `ts` (integer ms uptime,
+  0..4294967295), `pH`, `turb_ntu`, `tds_ppm`, `do_mgl`, `ec_uscm`, `orp_mv`,
+  `temp_w1`, `temp_w2`, `depth_cm`, `temp_air`, `humidity`, `pressure_hpa`.
+- No `lat`/`lon`/packet ID: the ESP32 adds GPS and a UUID.
+- Reply from ESP32: `ACK` once stored in flash, or `NAK <reason>` (`invalid_json`,
+  `wrong_field_count`, `bad_id`, `bad_ts`, a field name, `too_long`, `storage`).
+  Resend on NAK `storage` or when no reply arrives within 1 s.
+
+Example line:
+
+```json
+{"id":"WQM-001","ts":12000,"pH":7.12,"turb_ntu":42.5,"tds_ppm":310,"do_mgl":6.85,"ec_uscm":680.2,"orp_mv":215,"temp_w1":23.5,"temp_w2":23.48,"depth_cm":35.2,"temp_air":28.6,"humidity":65.3,"pressure_hpa":1013.25}
+```
+
+### Uploaded packet
+
+The ESP32 adds `gps_fix` (true/false) and, once it has a fix, `lat`, `lon`
+(6 decimals) and `gps_age_s` (seconds since that position was measured).
+Packets wait in flash (up to 2500, oldest dropped when full) and are retried
+with the same packet ID until the server acknowledges them.
+
+### Bench test without the STM32
+
+The gateway also accepts packets over the USB cable. Close the serial monitor, then:
+
+```bash
+~/.platformio/penv/Scripts/python.exe scripts/fake_stm.py COM5 5 10
+```
+
 ## Troubleshooting
 
 | Symptom                   | Check                                                                 |
