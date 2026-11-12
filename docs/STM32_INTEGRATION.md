@@ -71,46 +71,49 @@ Length *8 Bits*, Parity *None*, Stop Bits *1*, Hardware Flow Control *Disable*.
 Each reading is **one JSON object on one line, ending with `\n`**.
 
 ```json
-{"id":"WQM-001","ts":12000,"pH":7.12,"turb_ntu":42.5,"tds_ppm":310,"do_mgl":6.85,"ec_uscm":680.2,"orp_mv":215,"temp_w1":23.5,"temp_w2":23.48,"depth_cm":35.2,"temp_air":28.6,"humidity":65.3,"pressure_hpa":1013.25}
+{"id":"WQM-001","ts":166519,"pH":7.12,"tds_ppm":310.0,"do_mgl":8.84,"orp_mv":91.6,"temp_w1":23.62,"temp_air":28.60,"pressure_hpa":1013.25,"lat":0.000000,"lon":0.000000,"alt_m":0.0,"sog_knots":0.0,"cog_deg":0.0,"gps_fix":0,"sats":0,"heading":0.0,"pitch":0.0,"roll":0.0}
 ```
 
 Rules:
 
-1. **Exactly these 14 keys**, spelled exactly as below (case matters: `pH`).
-   No missing keys and no extra keys.
+1. **Required active keys** must always be present (`id`, `ts`, `pH`, `tds_ppm`, `do_mgl`, `orp_mv`, `temp_w1`, `temp_air`, `pressure_hpa`). Case matters (`pH`).
+   Reserved sensors (`turb_ntu`, `ec_uscm`, `temp_w2`, `depth_cm`, `humidity`) and STM32 GNSS/IMU fields (`lat`, `lon`, `alt_m`, `sog_knots`, `cog_deg`, `gps_fix`, `sats`, `heading`, `pitch`, `roll`) are optional pass-through fields.
 2. Numbers are **JSON numbers**: `7.12`, not `"7.12"`.
 3. **No `NaN`, `inf` or empty values.** Every value must be a real number.
-4. One line, **at most 512 bytes** including the `\n`. The example is ~210 bytes.
+4. One line, **at most 768 bytes** including the `\n`. The active STM32 line is ~280 bytes.
 5. Key order does not matter. Spaces are allowed but not needed.
-6. Do **not** send `lat`, `lon`, `gps_fix`, `utc_s` or a packet ID. The ESP32
-   adds them; a packet that contains them is rejected as `wrong_field_count`.
+6. The gateway prioritizes its own SIM7600 GNSS fix when valid; unfixed STM32 `(0, 0)` coordinates (`gps_fix: 0`) are stripped before upload so the map stays accurate. Wait for `ACK`/`NAK` from ESP32 on every packet.
 7. `\r\n` line endings are fine; the ESP32 ignores `\r`.
 
 ### Fields
 
-| Key | Type | Unit | Meaning |
-| --- | --- | --- | --- |
-| `id` | string | – | Boat ID, **`"WQM-001"`**. Letters, digits, `_`, `-` only, max 64 chars. Must be registered on the server; ask before changing it. |
-| `ts` | whole number | ms | STM32 uptime in milliseconds, e.g. `HAL_GetTick()`. 0 to 4294967295, no decimals. |
-| `pH` | number | – | Water pH |
-| `turb_ntu` | number | NTU | Turbidity |
-| `tds_ppm` | number | ppm | Total dissolved solids |
-| `do_mgl` | number | mg/L | Dissolved oxygen |
-| `ec_uscm` | number | µS/cm | Electrical conductivity |
-| `orp_mv` | number | mV | Oxidation-reduction potential |
-| `temp_w1` | number | °C | Water temperature, probe 1 |
-| `temp_w2` | number | °C | Water temperature, probe 2 |
-| `depth_cm` | number | cm | Depth |
-| `temp_air` | number | °C | Air temperature |
-| `humidity` | number | % | Relative humidity |
-| `pressure_hpa` | number | hPa | Air pressure |
+| Key | Type | Unit | Status | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | string | – | Required | Boat ID, **`"WQM-001"`**. Letters, digits, `_`, `-` only, max 64 chars. Must be registered on the server. |
+| `ts` | whole number | ms | Required | STM32 uptime in milliseconds, e.g. `HAL_GetTick()`. 0 to 4294967295, no decimals. |
+| `pH` | number | – | Required | Water pH (`PA3`, SEN0161 V1 on 5V w/ 2:1 divider; `PH_SCALE=4.942f`, `PH_OFFSET=-2.713f`) |
+| `tds_ppm` | number | ppm | Required | Total dissolved solids (`PA5`, SEN0244 w/ 2:1 divider; `TDS_CAL_K=1.036f`) |
+| `do_mgl` | number | mg/L | Required | Dissolved oxygen (`PA4`, SEN0237-A w/ 2:1 divider, 7.5% KCl, BMP280 pressure comp) |
+| `orp_mv` | number | mV | Required | Oxidation-reduction potential (`PC3`, SEN0165 w/ 2:1 divider, 20-sample trimmed mean) |
+| `temp_w1` | number | °C | Required | Water temperature (`PE6`, DS18B20 1-Wire) |
+| `temp_air` | number | °C | Required | Air temperature (`PB8/PB9`, BMP280 `0x76`) |
+| `pressure_hpa` | number | hPa | Required | Barometric pressure (`PB8/PB9`, BMP280 `0x76`) |
+| `turb_ntu` | number | NTU | Optional | Turbidity (`PC0`, reserved/unfitted in current STM32 build) |
+| `ec_uscm` | number | µS/cm | Optional | Electrical conductivity (`PA6`, reserved/unfitted in current STM32 build) |
+| `temp_w2` | number | °C | Optional | Backup water temperature probe (reserved) |
+| `depth_cm` | number | cm | Optional | Ultrasonic depth (reserved) |
+| `humidity` | number | % | Optional | Relative humidity (omitted — BMP280 has no RH sensor) |
+| `lat` / `lon` | number | deg | Optional | NEO-M8N GNSS coordinates (overridden by SIM7600 GNSS if fixed) |
+| `alt_m` / `sog_knots` / `cog_deg` | number | m / kn / deg | Optional | NEO-M8N altitude, speed over ground, course over ground |
+| `gps_fix` / `sats` | bool or int | – | Optional | Fix quality & satellite count |
+| `heading` / `pitch` / `roll` | number | deg | Optional | BNO085 9-DOF IMU Euler orientation |
 
 `ts` is only uptime. The ESP32 attaches the real date and time (`utc_s`), so the
 STM32 does not need a real-time clock.
 
-**If a sensor fails:** the packet still needs a real number for that field
-(the server currently rejects missing values). Agree with the team what to
-send in that case before deploying.
+**If a sensor fails:** keep finite real numbers in required fields; unfitted
+optional sensors should simply be omitted from the JSON rather than sent as `0`
+if not installed.
 
 ## 6. Reply from the ESP32
 
@@ -123,11 +126,11 @@ milliseconds:
 | `NAK storage` | Valid, but the ESP32 could not save it. | Resend the same line once or twice. |
 | `NAK invalid_json` | Not valid JSON (missing quote/comma/brace, or `nan`). | Bug in the STM32 code. Log it; don't resend unchanged. |
 | `NAK not_object` | Valid JSON but not `{...}`. | Bug; fix the code. |
-| `NAK wrong_field_count` | Not exactly 14 keys. | Bug; fix the code. |
+| `NAK unknown_field` | Contains an unrecognized JSON key outside the telemetry schema. | Remove typo/extra field in firmware. |
 | `NAK bad_id` | `id` missing, not a string, or bad characters. | Bug; fix the code. |
 | `NAK bad_ts` | `ts` missing, negative, has decimals, or is text. | Bug; fix the code. |
-| `NAK <field>`, e.g. `NAK pH` | That field is missing, text, or not finite. | Bug or failed sensor; fix the code. |
-| `NAK too_long` | Line over 512 bytes, or the `\n` never arrived. | Bug; fix the code. |
+| `NAK <field>`, e.g. `NAK pH` | That required or optional field is missing (if required), non-numeric, or non-finite. | Bug or failed sensor; fix the code. |
+| `NAK too_long` | Line over 768 bytes, or the `\n` never arrived. | Bug; fix the code. |
 | *(no reply within 1 s)* | Line or reply lost, or the ESP32 is rebooting. | Resend the same line, up to 3 attempts in total. |
 
 Resending after a lost reply can occasionally produce the same reading twice.
@@ -156,8 +159,11 @@ values from your own sensor code.
 extern UART_HandleTypeDef huart2;  // UART wired to the ESP32
 
 typedef struct {
-  float pH, turb_ntu, tds_ppm, do_mgl, ec_uscm, orp_mv;
-  float temp_w1, temp_w2, depth_cm, temp_air, humidity, pressure_hpa;
+  float pH, tds_ppm, do_mgl, orp_mv;
+  float temp_w1, temp_air, pressure_hpa;
+  float lat, lon, alt_m, sog_knots, cog_deg;
+  int gps_fix, sats;
+  float heading, pitch, roll;
 } Reading;
 
 // Builds one packet line ending in '\n'. Returns its length, or -1 if it
@@ -165,12 +171,15 @@ typedef struct {
 static int build_packet(char *out, size_t size, const Reading *r) {
   int n = snprintf(out, size,
     "{\"id\":\"WQM-001\",\"ts\":%lu,"
-    "\"pH\":%.2f,\"turb_ntu\":%.1f,\"tds_ppm\":%.1f,\"do_mgl\":%.2f,"
-    "\"ec_uscm\":%.1f,\"orp_mv\":%.1f,\"temp_w1\":%.2f,\"temp_w2\":%.2f,"
-    "\"depth_cm\":%.1f,\"temp_air\":%.1f,\"humidity\":%.1f,\"pressure_hpa\":%.2f}\n",
+    "\"pH\":%.2f,\"tds_ppm\":%.1f,\"do_mgl\":%.2f,\"orp_mv\":%.1f,"
+    "\"temp_w1\":%.2f,\"temp_air\":%.2f,\"pressure_hpa\":%.2f,"
+    "\"lat\":%.6f,\"lon\":%.6f,\"alt_m\":%.1f,\"sog_knots\":%.1f,\"cog_deg\":%.1f,"
+    "\"gps_fix\":%d,\"sats\":%d,\"heading\":%.1f,\"pitch\":%.1f,\"roll\":%.1f}\n",
     (unsigned long)HAL_GetTick(),
-    r->pH, r->turb_ntu, r->tds_ppm, r->do_mgl, r->ec_uscm, r->orp_mv,
-    r->temp_w1, r->temp_w2, r->depth_cm, r->temp_air, r->humidity, r->pressure_hpa);
+    r->pH, r->tds_ppm, r->do_mgl, r->orp_mv,
+    r->temp_w1, r->temp_air, r->pressure_hpa,
+    r->lat, r->lon, r->alt_m, r->sog_knots, r->cog_deg,
+    r->gps_fix, r->sats, r->heading, r->pitch, r->roll);
   return (n > 0 && (size_t)n < size) ? n : -1;
 }
 
@@ -190,7 +199,7 @@ static int read_reply(char *reply, size_t size, uint32_t timeout_ms) {
 
 // Sends one reading. Returns 1 when the ESP32 answered ACK.
 int send_reading(const Reading *r) {
-  char line[512];
+  char line[768];
   int len = build_packet(line, sizeof line, r);
   if (len < 0) return 0;
   for (int attempt = 0; attempt < 3; attempt++) {
@@ -242,8 +251,8 @@ which is not valid JSON.
 | --- | --- |
 | Nothing at all in the ESP32 log | TX/RX swapped, no shared GND, wrong pin, or UART not started on the STM32 |
 | Random symbols in the log, or `NAK invalid_json` every time | Baud rate not 115200, or float printing not enabled (section 8) |
-| `NAK wrong_field_count` | A key missing, misspelled, duplicated, or an extra key such as `lat` |
+| `NAK unknown_field` | A misspelled or unsupported JSON key outside the telemetry schema |
 | `NAK bad_ts` | `ts` printed with decimals (`%f`) or quotes; use `%lu` |
 | `NAK <field>` for one sensor | That value is `nan` or missing; check the sensor read |
-| `NAK too_long` | No `\n` at the end of the line, or the line is over 512 bytes |
+| `NAK too_long` | No `\n` at the end of the line, or the line is over 768 bytes |
 | STM32 never sees `ACK` but the ESP32 log shows `Queued` | ESP32 GPIO26 → STM32 RX wire missing, or the STM32 reads the wrong UART |

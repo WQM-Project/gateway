@@ -35,7 +35,7 @@ String newPacketId() {
 void handleLine(LineReader &reader, LineReader::Result got, Stream &port) {
   if (got == LineReader::TOO_LONG) {
     port.print("NAK too_long\n");
-    Serial.println("[STM] Line over 512 bytes discarded");
+    Serial.printf("[STM] Line over %u bytes discarded\n", static_cast<unsigned>(STM_MAX_LINE));
   } else if (got == LineReader::LINE) {
     String packet;
     const char *reason = "";

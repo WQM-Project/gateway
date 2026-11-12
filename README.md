@@ -500,20 +500,20 @@ Full guide with wiring, replies, example STM32 code and testing:
 [docs/STM32_INTEGRATION.md](docs/STM32_INTEGRATION.md).
 
 - UART 115200 baud, 8N1. One JSON object per line, ending in `
-`, max 512 bytes.
-- Exactly these 14 keys, numbers as JSON numbers (not strings):
+`, max 768 bytes.
+- Required active keys (JSON numbers, not strings):
   `id` (string, `A-Z a-z 0-9 _ -`, e.g. `"WQM-001"`), `ts` (integer ms uptime,
-  0..4294967295), `pH`, `turb_ntu`, `tds_ppm`, `do_mgl`, `ec_uscm`, `orp_mv`,
-  `temp_w1`, `temp_w2`, `depth_cm`, `temp_air`, `humidity`, `pressure_hpa`.
-- No `lat`/`lon`/packet ID: the ESP32 adds GPS and a UUID.
+  0..4294967295), `pH`, `tds_ppm`, `do_mgl`, `orp_mv`, `temp_w1`, `temp_air`, `pressure_hpa` (BMP280 — no `humidity` sensor on current STM32 build).
+- Optional / pass-through keys when present: reserved sensors (`turb_ntu`, `ec_uscm`, `temp_w2`, `depth_cm`, `humidity`) and STM32 NEO-M8N GNSS / BNO085 IMU fields (`lat`, `lon`, `alt_m`, `sog_knots`, `cog_deg`, `gps_fix`, `sats`, `heading`, `pitch`, `roll`).
+- Gateway SIM7600 GNSS takes priority when fixed; unfixed `(0, 0)` placeholder coordinates are omitted before queueing.
 - Reply from ESP32: `ACK` once stored in flash, or `NAK <reason>` (`invalid_json`,
-  `wrong_field_count`, `bad_id`, `bad_ts`, a field name, `too_long`, `storage`).
+  `unknown_field`, `bad_id`, `bad_ts`, a field name, `too_long`, `storage`).
   Resend on NAK `storage` or when no reply arrives within 1 s.
 
-Example line:
+Example line (matching active STM32 `WQM_BuildJSON` output):
 
 ```json
-{"id":"WQM-001","ts":12000,"pH":7.12,"turb_ntu":42.5,"tds_ppm":310,"do_mgl":6.85,"ec_uscm":680.2,"orp_mv":215,"temp_w1":23.5,"temp_w2":23.48,"depth_cm":35.2,"temp_air":28.6,"humidity":65.3,"pressure_hpa":1013.25}
+{"id":"WQM-001","ts":166519,"pH":7.12,"tds_ppm":310.0,"do_mgl":8.84,"orp_mv":91.6,"temp_w1":23.62,"temp_air":28.60,"pressure_hpa":1013.25,"lat":0.000000,"lon":0.000000,"alt_m":0.0,"sog_knots":0.0,"cog_deg":0.0,"gps_fix":0,"sats":0,"heading":0.0,"pitch":0.0,"roll":0.0}
 ```
 
 ### Uploaded packet

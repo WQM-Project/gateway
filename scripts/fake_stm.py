@@ -22,12 +22,18 @@ start = time.monotonic()
 for n in range(count):
     packet = {
         "id": "WQM-001", "ts": int((time.monotonic() - start) * 1000),
-        "pH": round(random.uniform(6.8, 7.6), 2), "turb_ntu": round(random.uniform(20, 60), 1),
-        "tds_ppm": random.randint(250, 350), "do_mgl": round(random.uniform(6, 8), 2),
-        "ec_uscm": round(random.uniform(500, 700), 1), "orp_mv": random.randint(180, 240),
-        "temp_w1": round(random.uniform(18, 24), 2), "temp_w2": round(random.uniform(18, 24), 2),
-        "depth_cm": round(random.uniform(20, 50), 1), "temp_air": round(random.uniform(20, 32), 1),
-        "humidity": round(random.uniform(40, 80), 1), "pressure_hpa": round(random.uniform(1005, 1020), 2),
+        "pH": round(random.uniform(6.8, 7.6), 2),
+        "tds_ppm": round(random.uniform(250, 350), 1),
+        "do_mgl": round(random.uniform(6.5, 8.9), 2),
+        "orp_mv": round(random.uniform(80, 260), 1),
+        "temp_w1": round(random.uniform(18, 25), 2),
+        "temp_air": round(random.uniform(20, 30), 2),
+        "pressure_hpa": round(random.uniform(1005, 1020), 2),
+        "lat": 0.0, "lon": 0.0, "alt_m": 0.0,
+        "sog_knots": 0.0, "cog_deg": 0.0, "gps_fix": 0, "sats": 0,
+        "heading": round(random.uniform(0, 359.9), 1),
+        "pitch": round(random.uniform(-2, 2), 1),
+        "roll": round(random.uniform(-2, 2), 1),
     }
     link.write((json.dumps(packet, separators=(",", ":")) + "\n").encode())
     print(f"-> packet {n + 1}/{count}")
