@@ -325,7 +325,7 @@ physical modem connectivity test.
 
 ### Upload contract to preserve
 
-- Send the complete 14-field STM32 JSON packet with `Content-Type: application/json`.
+- Send the STM32 JSON packet (7 required active measurements + optional reserved/GNSS/IMU fields) with `Content-Type: application/json`.
 - Authenticate using a dedicated gateway upload key.
 - Send a new UUID in `X-Packet-Id` for each new reading. Preserve the same UUID
   and unchanged data through retries; do not use boot-relative uptime as the ID.
@@ -397,7 +397,7 @@ pio device monitor --port COM8 --baud 115200
 Run these commands separately. No typing is needed once the monitor opens.
 The program initializes the modem, connects cellular data, reads its network
 clock and sets ESP32 UTC time (including timezone conversion), then sends a
-fixed synthetic 14-field `WQM-001` reading. An invalid clock stops the test.
+fixed synthetic legacy 14-field `WQM-001` test reading (`turb_ntu`/`ec_uscm`/`temp_w2`/`depth_cm`/`humidity` remain accepted alongside active 19-field packets). An invalid clock stops the test.
 The sample is **not a live sensor reading**; its `ts=12000` is example node uptime.
 
 Expected first run:
