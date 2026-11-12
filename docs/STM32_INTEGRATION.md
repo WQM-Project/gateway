@@ -1,27 +1,31 @@
 # STM32 → ESP32 integration guide
 
 This guide is for whoever writes the STM32 firmware. It covers everything the
-STM32 must do so the ESP32 gateway accepts its sensor readings and uploads
-them to the WQM dashboard. The ESP32 side is finished and tested; if the STM32
-follows this guide, nothing else needs to change.
+STM32 must do so the **onboard ESP32 + SIM7600 gateway** accepts its sensor
+readings and uploads them directly from the boat to the WQM dashboard over
+4G LTE (no LoRa radio or separate shore gateway is used). The ESP32 side is
+finished and tested; if the STM32 follows this guide, nothing else needs to
+change.
 
 ## 1. Big picture
 
 ```
-STM32 (reads sensors)
-  │  one JSON line per reading, over UART
+STM32 (onboard, reads water / atmospheric / IMU sensors)
+  │  one JSON line per reading, direct 3.3 V UART RX–TX
   ▼
-ESP32 gateway
-  │  checks the packet, adds GPS position + time + unique packet ID,
-  │  saves it to flash, replies "ACK"
+Onboard ESP32 gateway (WQM-Project/gateway)
+  │  checks the packet, attaches SIM7600 GNSS coordinates (lat/lon/fix)
+  │  + UTC time + unique packet ID, saves it to flash, replies "ACK"
   ▼
-SIM7600 4G modem ──► Supabase database ──► WQM dashboard
+SIM7600 4G LTE + GNSS module ──► Supabase backend ──► WQM dashboard
 ```
 
-The STM32 only has to **send one correct line of text per reading and wait
-for the reply**. It does **not** deal with GPS, the internet, packet IDs or
-retrying uploads; the ESP32 does all of that, including when there is no
-mobile signal (packets wait in the ESP32's flash and upload later).
+The STM32 only has to **send one correct line of text per reading over UART and
+wait for the reply**. It does **not** need a LoRa radio, shore relay, cellular
+modem, internet stack, packet IDs or upload retries; the onboard ESP32 +
+SIM7600 module provides GNSS GPS coordinates, UTC time, 4G HTTPS upload, and
+flash buffering when cellular signal drops (packets wait in the ESP32's flash
+and upload automatically when signal returns).
 
 ## 2. Words used in this guide
 
@@ -103,13 +107,14 @@ Rules:
 | `temp_w2` | number | °C | Optional | Backup water temperature probe (reserved) |
 | `depth_cm` | number | cm | Optional | Ultrasonic depth (reserved) |
 | `humidity` | number | % | Optional | Relative humidity (omitted — BMP280 has no RH sensor) |
-| `lat` / `lon` | number | deg | Optional | NEO-M8N GNSS coordinates (overridden by SIM7600 GNSS if fixed) |
+| `lat` / `lon` | number | deg | Optional | Overridden/supplied by onboard SIM7600 GNSS when fixed (optional STM32 GNSS pass-through) |
 | `alt_m` / `sog_knots` / `cog_deg` | number | m / kn / deg | Optional | NEO-M8N altitude, speed over ground, course over ground |
 | `gps_fix` / `sats` | bool or int | – | Optional | Fix quality & satellite count |
 | `heading` / `pitch` / `roll` | number | deg | Optional | BNO085 9-DOF IMU Euler orientation |
 
-`ts` is only uptime. The ESP32 attaches the real date and time (`utc_s`), so the
-STM32 does not need a real-time clock.
+`ts` is only uptime. The onboard ESP32 + SIM7600 attaches the real date, time
+(`utc_s`), and GNSS GPS coordinates, so the STM32 does not need a real-time
+clock or separate GPS module.
 
 **If a sensor fails:** keep finite real numbers in required fields; unfitted
 optional sensors should simply be omitted from the JSON rather than sent as `0`

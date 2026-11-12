@@ -1,8 +1,11 @@
-# WQM Gateway — Modem Connectivity and Upload Setup
+# WQM Gateway — Onboard Modem Connectivity and Upload Setup
 
-Target: ESP32-WROOM-32 development board plus Waveshare SIM7600X HAT fitted
-with SIM7600G-H, part of the WQM-Project ecosystem. Earlier planning listed
-ESP8266 + SIM7600E; these diagnostics target the supplied ESP32 + SIM7600G-H.
+Target: **onboard ESP32-WROOM-32** development board wired directly to the
+STM32 via 3.3 V UART RX–TX and paired with a **Waveshare SIM7600X HAT** fitted
+with **SIM7600G-H** (4G LTE + GNSS), part of the WQM-Project ecosystem. Earlier
+planning listed an off-boat ESP8266 + LoRa shore gateway; this architecture
+runs directly onboard the boat (no LoRa transceiver or separate shore station),
+with the SIM7600 supplying both GNSS coordinates and cellular upload.
 
 ## Files and scope
 
@@ -44,8 +47,9 @@ files are shared pieces included by them. The backend work belongs to
 - VS Code with PlatformIO IDE, or PlatformIO Core.
 
 HAT means “Hardware Attached on Top”: here it is the blue carrier board with
-the modem, SIM holder, USB ports and power circuitry. No Raspberry Pi is
-required. LoRa hardware is needed later for boat reception, not for this test.
+the modem, SIM holder, USB ports, GNSS antenna socket and power circuitry. No
+Raspberry Pi or LoRa module is used — the ESP32 + SIM7600 sits onboard the boat
+and reads STM32 packets directly over 3.3 V UART RX–TX (`GPIO25`/`GPIO26`).
 
 Use the HAT's labelled UART header and verify its routing/jumper configuration
 against the manual for this board revision. Do not assume the current jumpers
@@ -228,8 +232,8 @@ power, remove the loopback jumper, reconnect the modem wiring, and upload
   asynchronous result and reports modem error statuses as failures.
 
 An HTTP-only probe does not verify secure HTTPS connectivity or storage.
-To complete the assignment, add packet reception and authenticated HTTPS
-upload using the backend contract, then test with the real radios and server.
+See `firmware/gateway.cpp` below for the production STM32 UART RX–TX receiver,
+SIM7600 GNSS enrichment, flash queue, and authenticated HTTPS uploader.
 
 ## Verification status
 
@@ -239,9 +243,9 @@ upload using the backend contract, then test with the real radios and server.
 | Automatic ESP32 UART loopback            | Passed; 18 matching bytes received      |
 | SIM/LTE/HTTP diagnostic                  | Compiled, flashed; cellular HTTP passed |
 | Physical wiring and modem operation      | Verified on supplied hardware           |
-| LoRa packet receiver                     | Pending implementation                  |
-| Secure backend upload                    | Pending implementation                  |
-| Continuous operation, queues and retries | Pending implementation                  |
+| STM32 UART packet receiver (`stm_link.h`) | Implemented in `gateway.cpp` (`GPIO25`/`GPIO26`) |
+| Secure backend upload (`uploader.h`)     | Verified on ESP32 + SIM7600 (`HTTP 201` / `200`) |
+| Persistent flash queue (`packet_queue.h`) | Implemented in `gateway.cpp` (`LittleFS`) |
 
 ### Hardware results — 9 October 2026
 
@@ -313,7 +317,8 @@ The exact UUID `ca949536-e954-4e74-840d-d774446d3908` was independently read fro
 WQM Postgres: exactly one `WQM-001` row, all 14 synthetic fields matched, stored
 at `2026-10-11T07:53:23.890Z`. That sample remains for inspection. The second
 modem request completed with HTTP 200 and a matching duplicate acknowledgement;
-the save-plus-duplicate test passed. This does not verify boat/radio reception.
+the save-plus-duplicate test passed (using synthetic payload — run `gateway`
+on the boat to verify live STM32 UART RX–TX + SIM7600 GNSS packets end to end).
 The existing Next.js `POST /api/ingest` lives in
 the dashboard backend; it is not automatically available at the Supabase URL.
 The modem cannot access a laptop's `localhost` address over the mobile network.
@@ -359,7 +364,7 @@ source or serial logs. Do not place authentication keys in query-string URLs.
 1. Run `backend_upload_test` on the physical ESP32/modem.
 2. Verify its printed packet ID and exact synthetic values in the database.
 3. Confirm the duplicate acknowledgement corresponds to only one row.
-4. Record results, then integrate LoRa reception and continuous queue/retry logic.
+4. Record results, then run the full onboard `gateway` firmware with live STM32 UART RX–TX packets and SIM7600 GNSS.
 
 ### Run the cellular backend upload test
 
@@ -471,14 +476,15 @@ using the updated values. Do not erase pending storage just to change readings.
 
 Sending lowercase `r` after any successful test creates another new packet with
 the same compiled sample values. The serial monitor does not currently accept
-custom JSON input. Real sensor/LoRa packets will replace this sample source when
-the boat and radio integration are ready.
+custom JSON input. Real onboard STM32 UART packets (plus live SIM7600 GNSS
+coordinates) replace this sample source in the production `gateway` firmware.
 
-## Gateway firmware (STM32 -> ESP32 -> GPS -> Supabase)
+## Onboard Gateway firmware (STM32 → UART → ESP32 + SIM7600 4G/GNSS → Supabase)
 
 `firmware/gateway.cpp` (`pio run -e gateway -t upload -t monitor`) is the
-production gateway. It reads sensor packets from the STM32, adds the SIM7600
-GNSS position, stores each packet in flash and uploads it over LTE/HTTPS.
+production onboard gateway (no LoRa radio or separate shore gateway). It reads
+sensor packets directly from the STM32 over 3.3 V UART RX–TX, adds the SIM7600
+GNSS position + UTC time, stores each packet in flash and uploads it over 4G LTE/HTTPS.
 `firmware/tests/gps_test.cpp` (`-e gps_test`) checks the GNSS antenna on its own.
 
 ### Wiring
@@ -499,8 +505,7 @@ All UART lines are 3.3 V logic.
 Full guide with wiring, replies, example STM32 code and testing:
 [docs/STM32_INTEGRATION.md](docs/STM32_INTEGRATION.md).
 
-- UART 115200 baud, 8N1. One JSON object per line, ending in `
-`, max 768 bytes.
+- UART 115200 baud, 8N1. One JSON object per line, ending in `\n`, max 768 bytes.
 - Required active keys (JSON numbers, not strings):
   `id` (string, `A-Z a-z 0-9 _ -`, e.g. `"WQM-001"`), `ts` (integer ms uptime,
   0..4294967295), `pH`, `tds_ppm`, `do_mgl`, `orp_mv`, `temp_w1`, `temp_air`, `pressure_hpa` (BMP280 — no `humidity` sensor on current STM32 build).
