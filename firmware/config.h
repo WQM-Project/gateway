@@ -11,7 +11,10 @@ constexpr int STM_TX_PIN = 26; // ESP32 TX -> STM32 RX (ACK/NAK replies)
 constexpr unsigned long STM_BAUD = 115200;
 
 // Airtel India APN for the SIM currently under test. Change when switching operator.
-constexpr const char *SIM_APN = "airtelgprs.com";
+// constexpr const char *SIM_APN = "airtelgprs.com";
+
+// Reliance Jio India APN. Change if switching operator.
+constexpr const char *SIM_APN = "jionet";
 
 // Public HTTP probe only: no gateway key or sensor data is sent.
 // HTTP success proves basic data connectivity, not authenticated HTTPS upload.
