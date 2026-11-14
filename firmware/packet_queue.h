@@ -64,6 +64,16 @@ class PacketQueue {
     xSemaphoreGive(lock);
   }
 
+  // Wipe every queued packet and reset counters to zero.
+  void clear() {
+    xSemaphoreTake(lock, portMAX_DELAY);
+    uint32_t removed = 0;
+    while (head < tail) { LittleFS.remove(path(head)); ++head; ++removed; }
+    head = 0; tail = 0; save();
+    xSemaphoreGive(lock);
+    Serial.printf("[Queue] Cleared %lu packet(s)\n", static_cast<unsigned long>(removed));
+  }
+
   uint32_t size() { return tail - head; }
 
  private:

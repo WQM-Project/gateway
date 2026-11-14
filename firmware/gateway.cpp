@@ -92,6 +92,7 @@ void setup() {
   stmSerial.setRxBufferSize(2048);
   stmSerial.begin(STM_BAUD, SERIAL_8N1, STM_RX_PIN, STM_TX_PIN);
   Serial.println("\nWQM gateway starting");
+  Serial.println("Send 'c' within 3 s to clear the packet queue");
   if (!packets.begin()) { Serial.println("[FAIL] Flash queue unavailable; halting"); for (;;) delay(1000); }
   uploader.begin();
   // Accept STM32 packets immediately, even before the modem is up.
@@ -100,7 +101,13 @@ void setup() {
   // step), the chip reboots itself after WATCHDOG_S.
   esp_task_wdt_init(WATCHDOG_S, true);
   esp_task_wdt_add(nullptr);
-  delay(3000);
+  // Give user 3 seconds to send 'c' to clear the queue before normal operation.
+  unsigned long waitEnd = millis() + 3000;
+  while (millis() < waitEnd) {
+    if (Serial.available() && Serial.read() == 'c') { packets.clear(); break; }
+    delay(10);
+  }
+  delay(500);
 }
 
 void loop() {
