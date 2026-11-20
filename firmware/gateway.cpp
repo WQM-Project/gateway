@@ -92,7 +92,11 @@ void setup() {
   stmSerial.setRxBufferSize(2048);
   stmSerial.begin(STM_BAUD, SERIAL_8N1, STM_RX_PIN, STM_TX_PIN);
   Serial.println("\nWQM gateway starting");
+#ifdef WQM_USB_PACKETS
   Serial.println("Send 'c' within 3 s to clear the packet queue");
+#else
+  Serial.println("Send 'c' at any time to clear the packet queue");
+#endif
   if (!packets.begin()) { Serial.println("[FAIL] Flash queue unavailable; halting"); for (;;) delay(1000); }
   uploader.begin();
   // Accept STM32 packets immediately, even before the modem is up.
@@ -101,17 +105,27 @@ void setup() {
   // step), the chip reboots itself after WATCHDOG_S.
   esp_task_wdt_init(WATCHDOG_S, true);
   esp_task_wdt_add(nullptr);
-  // Give user 3 seconds to send 'c' to clear the queue before normal operation.
+#ifdef WQM_USB_PACKETS
+  // Bench build: USB serial carries packets after boot, so 'c' only works in
+  // this 3 s window. The normal build checks for 'c' in loop() instead.
   unsigned long waitEnd = millis() + 3000;
   while (millis() < waitEnd) {
     if (Serial.available() && Serial.read() == 'c') { packets.clear(); break; }
     delay(10);
   }
+#endif
   delay(500);
 }
 
 void loop() {
   esp_task_wdt_reset();
+#ifndef WQM_USB_PACKETS
+  // Type 'c' in the USB serial monitor at any time to empty the packet queue.
+  // (In the bench build, USB serial carries packets instead, so this is off.)
+  while (Serial.available()) {
+    if (Serial.read() == 'c') packets.clear();
+  }
+#endif
   if (!modemReady) {
     if (!modemDownSince) modemDownSince = millis();
     if (millis() - modemDownSince > MODEM_DOWN_RESTART_MS) rebootEsp("Modem silent for 10 min");

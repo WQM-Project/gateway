@@ -11,7 +11,10 @@
 // A packet is acknowledged to the STM32 only after its file is complete.
 class PacketQueue {
  public:
-  static constexpr uint32_t CAPACITY = 2500;  // ~1.1 MB of the 1.4 MB partition
+  // Small on purpose: a long outage should not pile up a huge backlog. When
+  // full, new packets are refused (the STM32 gets "NAK storage") until uploads
+  // drain the queue or it is cleared with 'c' on the USB serial monitor.
+  static constexpr uint32_t CAPACITY = 50;
 
   bool begin() {
     lock = xSemaphoreCreateMutex();
@@ -31,10 +34,10 @@ class PacketQueue {
   bool push(const String &record) {
     xSemaphoreTake(lock, portMAX_DELAY);
     if (tail - head >= CAPACITY) {
-      // Full after a long outage: keep the newest readings, drop the oldest.
-      LittleFS.remove(path(head));
-      ++head;
-      Serial.println("[Queue] Full; dropped oldest packet");
+      // Full: keep what is already queued and refuse the new packet.
+      xSemaphoreGive(lock);
+      Serial.printf("[Queue] Full (%lu); new packet refused. Send 'c' to clear.\n", static_cast<unsigned long>(CAPACITY));
+      return false;
     }
     File file = LittleFS.open("/q/tmp", "w");
     const bool written = file && file.print(record) == record.length();
