@@ -7,6 +7,43 @@ planning listed an off-boat ESP8266 + LoRa shore gateway; this architecture
 runs directly onboard the boat (no LoRa transceiver or separate shore station),
 with the SIM7600 supplying both GNSS coordinates and cellular upload.
 
+## Quick reference
+
+Run in this folder with the ESP32 on USB. Every build: `pio run -e <name> -t upload`, then watch it with `pio device monitor --baud 115200`.
+
+**Boat firmware**
+- `gateway`: the real boat firmware. STM32 packet → GPS + time → flash queue → 4G upload.
+  - Flash: `pio run -e gateway -t upload`
+  - Clear queue: type `c` in the monitor at any time
+  - Queue holds max **50** packets; when full, new ones are refused (`NAK storage`) until uploads catch up
+- `gateway_bench`: same firmware, but takes packets over USB (for `scripts/fake_stm.py`). Bench only, not for the boat.
+  - Flash: `pio run -e gateway_bench -t upload`
+  - Clear queue: type `c` in the first 3 s after boot
+
+**Test builds** (flash one, open the monitor, read the result)
+- `uart_loopback_test`: checks the ESP32 serial port. Wire GPIO17 to GPIO16 first.
+  - `pio run -e uart_loopback_test -t upload`
+- `connectivity_test`: checks modem, SIM, 4G registration and internet.
+  - `pio run -e connectivity_test -t upload`
+- `gps_test`: checks the GNSS antenna and gets a position fix.
+  - `pio run -e gps_test -t upload`
+- `backend_upload_test`: sends one test packet to Supabase over HTTPS.
+  - `pio run -e backend_upload_test -t upload`
+- `modem_bridge`: type modem AT commands yourself (default build).
+  - `pio run -e modem_bridge -t upload`
+
+**Where the code is**
+- Main loop (receive → queue → upload): `firmware/gateway.cpp`
+- Upload to Supabase (4G data, TLS, HTTPS POST, retries): `firmware/uploader.h`
+- STM32 packet check and ACK/NAK: `firmware/stm_link.h`
+- GPS position and time: `firmware/gps.h`
+- Flash queue: `firmware/packet_queue.h`
+
+**Settings**
+- Pins, baud rates, SIM APN: `firmware/config.h`
+- Upload key: `firmware/upload.local.h` (copy from the `.example`; never commit it)
+- Queue size: `CAPACITY` in `firmware/packet_queue.h`
+
 ## Files and scope
 
 ```text
